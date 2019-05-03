@@ -1392,11 +1392,12 @@ void Robot::loop()  {
 	  printInfo(Console); 
     printErrors();
 	}
- 
+    /*
     if (stateCurr != STATE_ROS && rmcsUse == false) {
       printInfo(Console);    
       printErrors();
-    }    
+    } 
+    */   
     ledState = ~ledState;    
     /*if (ledState) setActuator(ACT_LED, HIGH);
       else setActuator(ACT_LED, LOW);        */
