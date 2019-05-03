@@ -257,14 +257,13 @@ public:
   char imuUseMPU;
   unsigned long lastAHRSTime;
   unsigned long now;  
+  ypr_t ypr;  // gyro yaw,pitch,roll    
 
+  float aRes, gRes, mRes;      // scale resolutions per LSB for the sensors
+  const float* q;    // vector to hold quaternion
   uint32_t lastUpdateMicros; // used to calculate integration interval
   uint32_t NowMicros;        // used to calculate integration interval
   float deltat;
-  
-  ypr_t ypr;  // gyro yaw,pitch,roll   
-  float aRes, gRes, mRes;      // scale resolutions per LSB for the sensors
-  const float* q;    // vector to hold quaternion
 
   // --------- gyro state -----------------------------
   point_float_t gyro;   // gyro sensor data (degree)    
@@ -310,7 +309,6 @@ public:
   float distancePI(float x, float w);
   float distance180(float x, float w);
   float fusionPI(float w, float a, float b);    
-  //void MahonyQuaternionUpdate(float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz);
 private:  
   void read();
   void loadSaveCalib(boolean readflag);  
@@ -326,22 +324,22 @@ private:
   void initADXL345B();
   boolean initL3G4200D();
   void initHMC5883L();
-  boolean initMPU();
   void readL3G4200D(boolean useTa);
   void readADXL345B();
   void readHMC5883L();
-  void readMPUGyro();
-  void readMPUAcc();
-  void readMPUMag();
-  void readMPUTemp();
   boolean foundNewMinMax;
   void MPU9250SelfTest(float * destination);
   void calibrateMPU9250(float * dest1, float * dest2);
+  boolean initMPU();
   void initMPU9250();
   void initAK8963(float * destination);
   void getAres();
   void getMres();
   void getGres();
+  void readMPUGyro();
+  void readMPUAcc();
+  void readMPUMag();
+  void readMPUTemp();
   // Specify sensor full scale
 uint8_t Gscale = GFS_250DPS;
 uint8_t Ascale = AFS_2G;
@@ -359,3 +357,4 @@ float   SelfTest[6];    // holds results of gyro and accelerometer self test
 
 
 #endif
+

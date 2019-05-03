@@ -40,6 +40,7 @@
 #define ADDR 600
 #define MAGIC 6
 
+
 struct {
   uint8_t xl;
   uint8_t xh;
@@ -475,28 +476,6 @@ void IMU::readL3G4200D(boolean useTa){
   gyroCounter++;
 }
 
-void IMU::readMPUGyro(){  
-  now = micros();
-  lastGyroTime = now;
-  uint8_t rawData[6];  // x/y/z gyro register data stored here
-
-  I2CreadFrom(MPU9250_ADDRESS, GYRO_XOUT_H, 6, (uint8_t *)rawData);         // the first bit of the register address specifies we want automatic address increment
-
-  gyro.x = gyro.y = gyro.z = 0;
-  float x = ((int16_t)rawData[0] << 8) | rawData[1] ;  // Turn the MSB and LSB into a signed 16-bit value
-  float y = ((int16_t)rawData[2] << 8) | rawData[3] ;  
-  float z = ((int16_t)rawData[4] << 8) | rawData[5] ; 
-
-  gyro.x = x*gRes;
-  gyro.y = y*gRes;
-  gyro.z = z*gRes;
-  if (gyro.x > 250) gyro.x = 500-gyro.x;
-  if (gyro.y > 250) gyro.y = 500-gyro.y;
-  if (gyro.z > 250) gyro.z = 500-gyro.z;
-  gyroCounter++;
-
-}
-
 // HMC5883L compass sensor driver
 void  IMU::initHMC5883L(){
   I2CwriteTo(HMC5883L, 0x00, 0x70);  // 8 samples averaged, 75Hz frequency, no artificial bias.       
@@ -532,82 +511,6 @@ void IMU::readHMC5883L(){
     com.z = z;
   }  
 }
-
-void IMU::readMPUMag(){    
-  uint8_t buf[7];  // x/y/z gyro register data, ST2 register stored here, must read ST2 at end of data acquisition  
-  uint8_t rawData[1];
-  I2CreadFrom(AK8963_ADDRESS, AK8963_ST1, 1, (uint8_t*)rawData);
-  byte c = rawData[0];
-  if(c & 0x01) { // wait for magnetometer data ready bit to be set
-    I2CreadFrom(AK8963_ADDRESS, AK8963_XOUT_L, 7, (uint8_t*)buf);
-    uint8_t d = rawData[6]; // End data read by reading ST2 register
-    if(!(d & 0x08)) { // Check if magnetic sensor overflow set, if not then report data
-      // scale +1.3Gauss..-1.3Gauss  (*0.00092)  
-      float x = (int16_t) (((uint16_t)buf[1]) << 8 | buf[0]);
-      float y = (int16_t) (((uint16_t)buf[3]) << 8 | buf[2]);
-      float z = (int16_t) (((uint16_t)buf[5]) << 8 | buf[4]);  
-
-      if (useComCalibration){
-        x -= comOfs.x;
-        y -= comOfs.y;
-        z -= comOfs.z;
-        x /= comScale.x*0.5;    
-        y /= comScale.y*0.5;    
-        z /= comScale.z*0.5;
-        com.x = x;
-        //Console.println(z);
-        com.y = y;
-        com.z = z;
-      } else {
-      magbias[0] = +470.;  // User environmental x-axis correction in milliGauss, should be automatically calculated
-      magbias[1] = +120.;  // User environmental x-axis correction in milliGauss
-      magbias[2] = +125.;  // User environmental x-axis correction in milliGauss
-      
-      // Calculate the magnetometer values in milliGauss
-      // Include factory calibration per data sheet and user environmental corrections
-      com.x = (float)x*mRes*magCalibration[0] - magbias[0];  // get actual magnetometer value, this depends on scale being set
-      com.y = (float)y*mRes*magCalibration[1] - magbias[1];  
-      com.z = (float)z*mRes*magCalibration[2] - magbias[2];   
-        //com.x = x;
-        //com.y = y;
-        //com.z = z;
-      }  
-
-    }
-  }
-}
-
-void IMU::readMPUAcc(){  
-  uint8_t buf[6];
-  if (I2CreadFrom(MPU9250_ADDRESS, ACCEL_XOUT_H, 6, (uint8_t*)buf) != 6){
-    errorCounter++;
-    return;
-  }
-  // Convert the accelerometer value to G's. 
-  // With 10 bits measuring over a +/-4g range we can find how to convert by using the equation:
-  // Gs = Measurement Value * (G-range/(2^10)) or Gs = Measurement Value * (8/1024)
-  // ( *0.0078 )
-  float x=(int16_t) (((uint16_t)buf[0]) << 8 | buf[1]); 
-  float y=(int16_t) (((uint16_t)buf[2]) << 8 | buf[3]); 
-  float z=(int16_t) (((uint16_t)buf[4]) << 8 | buf[5]); 
-  //Console.println(z);
-  acc.x = x*aRes;
-  acc.y = y*aRes;
-  acc.z = z*aRes;
-  accelCounter++;
-}
-
-void IMU::readMPUTemp(){  
-  uint8_t rawData[2];  // x/y/z gyro register data stored here
-  I2CreadFrom(MPU9250_ADDRESS, TEMP_OUT_H, 2, (uint8_t*)rawData);
-  int16_t temp = ((int16_t)rawData[0] << 8) | rawData[1] ;  // Turn the MSB and LSB into a 16-bit value
-  // Temperature in degrees Centigrade
-  temperature = ((float) temp) / 333.87 + 21.0;
-  //Console.print("Current temperature is ");
-  //Console.print(temperature);
-  //Console.println(" degrees Celsius.");
-}      
-
 
 float IMU::sermin(float oldvalue, float newvalue){
   if (newvalue < oldvalue) {
@@ -866,13 +769,12 @@ float scalePIangles(float setAngle, float currAngle){
     else return setAngle;
 }
 
-
 void IMU::update(){
   read();  
   now = millis();
   int looptime = (now - lastAHRSTime);
   lastAHRSTime = now;
-
+  
   if (state == IMU_RUN){
 
 
@@ -893,28 +795,12 @@ void IMU::update(){
       //ypr.yaw   *= 180.0f / PI; 
       //ypr.yaw   += 2.8; // Declination at Cologne, Germany is 2.48° W  ± 0.36°  changing by  0.20° E per year on 2019-04-26
       //ypr.roll  *= 180.0f / PI;
-      /*
-      Console.print("MPU Measure acc.x=");
-      Console.print(acc.x);
-      Console.print(" acc.y=");
-      Console.print(acc.y);
-      Console.print(" acc.z=");
-      Console.print(acc.z);
-      Console.print(" gyr.x=");
-      Console.print(gyro.x);
-      Console.print(" gyr.y=");
-      Console.print(gyro.y);
-      Console.print(" gyr.z=");
-      Console.print(gyro.z);
-      Console.print(" mag.x=");
-      Console.print(com.x);
-      Console.print(" mag.y=");
-      Console.print(com.y);
-      Console.print(" mag.z=");
-      Console.println(com.z);
-      */
     } else {
+
+      // ------ roll, pitch --------------  
       float forceMagnitudeApprox = abs(acc.x) + abs(acc.y) + abs(acc.z);    
+      //if (forceMagnitudeApprox < 1.2) {
+      //Console.println(forceMagnitudeApprox);      
       accPitch   = atan2(-acc.x , sqrt(sq(acc.y) + sq(acc.z)));         
       accRoll    = atan2(acc.y , acc.z);       
       accPitch = scalePIangles(accPitch, ypr.pitch);
@@ -922,6 +808,12 @@ void IMU::update(){
       // complementary filter            
       ypr.pitch = Kalman(accPitch, gyro.x, looptime, ypr.pitch);  
       ypr.roll  = Kalman(accRoll,  gyro.y, looptime, ypr.roll);            
+      /*} else {
+        //Console.print("too much acceleration ");
+        //Console.println(forceMagnitudeApprox);
+        ypr.pitch = ypr.pitch + gyro.y * ((float)(looptime))/1000.0;
+        ypr.roll  = ypr.roll  + gyro.x * ((float)(looptime))/1000.0;
+      }*/
       ypr.pitch=scalePI(ypr.pitch);
       ypr.roll=scalePI(ypr.roll);
       // ------ yaw --------------
@@ -931,6 +823,7 @@ void IMU::update(){
       comTilt.z = -com.x  * cos(ypr.roll)         * sin(ypr.pitch) + com.y * sin(ypr.roll) + com.z * cos(ypr.roll) * cos(ypr.pitch);     
       comYaw = scalePI( atan2(comTilt.y, comTilt.x)  );  
       comYaw = scalePIangles(comYaw, ypr.yaw);
+      //comYaw = atan2(com.y, com.x);  // assume pitch, roll are 0
       // complementary filter
       ypr.yaw = Complementary2(comYaw, -gyro.z, looptime, ypr.yaw);
       ypr.yaw = scalePI(ypr.yaw);
@@ -1375,3 +1268,105 @@ void IMU::calibrateMPU9250(float * dest1, float * dest2)
    dest2[1] = (float)accel_bias[1]/(float)accelsensitivity;
    dest2[2] = (float)accel_bias[2]/(float)accelsensitivity;
 }
+
+void IMU::readMPUGyro(){  
+  now = micros();
+  lastGyroTime = now;
+  uint8_t rawData[6];  // x/y/z gyro register data stored here
+
+  I2CreadFrom(MPU9250_ADDRESS, GYRO_XOUT_H, 6, (uint8_t *)rawData);         // the first bit of the register address specifies we want automatic address increment
+
+  gyro.x = gyro.y = gyro.z = 0;
+  float x = ((int16_t)rawData[0] << 8) | rawData[1] ;  // Turn the MSB and LSB into a signed 16-bit value
+  float y = ((int16_t)rawData[2] << 8) | rawData[3] ;  
+  float z = ((int16_t)rawData[4] << 8) | rawData[5] ; 
+
+  gyro.x = x*gRes;
+  gyro.y = y*gRes;
+  gyro.z = z*gRes;
+  if (gyro.x > 250) gyro.x = 500-gyro.x;
+  if (gyro.y > 250) gyro.y = 500-gyro.y;
+  if (gyro.z > 250) gyro.z = 500-gyro.z;
+  gyroCounter++;
+
+}
+
+
+void IMU::readMPUMag(){    
+  uint8_t buf[7];  // x/y/z gyro register data, ST2 register stored here, must read ST2 at end of data acquisition  
+  uint8_t rawData[1];
+  I2CreadFrom(AK8963_ADDRESS, AK8963_ST1, 1, (uint8_t*)rawData);
+  byte c = rawData[0];
+  if(c & 0x01) { // wait for magnetometer data ready bit to be set
+    I2CreadFrom(AK8963_ADDRESS, AK8963_XOUT_L, 7, (uint8_t*)buf);
+    uint8_t d = rawData[6]; // End data read by reading ST2 register
+    if(!(d & 0x08)) { // Check if magnetic sensor overflow set, if not then report data
+      // scale +1.3Gauss..-1.3Gauss  (*0.00092)  
+      float x = (int16_t) (((uint16_t)buf[1]) << 8 | buf[0]);
+      float y = (int16_t) (((uint16_t)buf[3]) << 8 | buf[2]);
+      float z = (int16_t) (((uint16_t)buf[5]) << 8 | buf[4]);  
+
+      if (useComCalibration){
+        x -= comOfs.x;
+        y -= comOfs.y;
+        z -= comOfs.z;
+        x /= comScale.x*0.5;    
+        y /= comScale.y*0.5;    
+        z /= comScale.z*0.5;
+        com.x = x;
+        //Console.println(z);
+        com.y = y;
+        com.z = z;
+      } else {
+      magbias[0] = +470.;  // User environmental x-axis correction in milliGauss, should be automatically calculated
+      magbias[1] = +120.;  // User environmental x-axis correction in milliGauss
+      magbias[2] = +125.;  // User environmental x-axis correction in milliGauss
+      
+      // Calculate the magnetometer values in milliGauss
+      // Include factory calibration per data sheet and user environmental corrections
+      com.x = (float)x*mRes*magCalibration[0] - magbias[0];  // get actual magnetometer value, this depends on scale being set
+      com.y = (float)y*mRes*magCalibration[1] - magbias[1];  
+      com.z = (float)z*mRes*magCalibration[2] - magbias[2];   
+        //com.x = x;
+        //com.y = y;
+        //com.z = z;
+      }  
+
+    }
+  }
+}
+
+void IMU::readMPUAcc(){  
+  uint8_t buf[6];
+  if (I2CreadFrom(MPU9250_ADDRESS, ACCEL_XOUT_H, 6, (uint8_t*)buf) != 6){
+    errorCounter++;
+    return;
+  }
+  // Convert the accelerometer value to G's. 
+  // With 10 bits measuring over a +/-4g range we can find how to convert by using the equation:
+  // Gs = Measurement Value * (G-range/(2^10)) or Gs = Measurement Value * (8/1024)
+  // ( *0.0078 )
+  float x=(int16_t) (((uint16_t)buf[0]) << 8 | buf[1]); 
+  float y=(int16_t) (((uint16_t)buf[2]) << 8 | buf[3]); 
+  float z=(int16_t) (((uint16_t)buf[4]) << 8 | buf[5]); 
+  //Console.println(z);
+  acc.x = x*aRes;
+  acc.y = y*aRes;
+  acc.z = z*aRes;
+  accelCounter++;
+}
+
+void IMU::readMPUTemp(){  
+  uint8_t rawData[2];  // x/y/z gyro register data stored here
+  I2CreadFrom(MPU9250_ADDRESS, TEMP_OUT_H, 2, (uint8_t*)rawData);
+  int16_t temp = ((int16_t)rawData[0] << 8) | rawData[1] ;  // Turn the MSB and LSB into a 16-bit value
+  // Temperature in degrees Centigrade
+  temperature = ((float) temp) / 333.87 + 21.0;
+  //Console.print("Current temperature is ");
+  //Console.print(temperature);
+  //Console.println(" degrees Celsius.");
+}      
+
+
+
+

@@ -28,7 +28,9 @@
 #include "i2c.h"
 //#include "ardumower.h"
 #include <Wire.h>  
-
+#ifdef __AVR_ATmega2560__
+  #include <avr/wdt.h>
+#endif  
 
 char *dayOfWeek[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
 
@@ -331,7 +333,6 @@ int measureLawnCapacity(int pinSend, int pinReceive){
   while (digitalRead(pinReceive)==LOW) t++;        
   digitalWrite(pinSend, LOW);  
   //t = pulseIn(pinReceive, HIGH);
-  //Console.print("Lawn Sensor Capacity = ");
   //Console.println(t);       
   return t;
 }
@@ -357,3 +358,22 @@ int getDayOfWeek(int month, int day, int year, int CalendarSystem)
              + CalendarSystem
             ) % 7;
 }
+
+
+// software reset
+void softwareReset(){
+#ifdef __AVR_ATmega2560__
+  // Arduino Mega    
+  wdt_enable(WDTO_15MS);
+  while(1)
+  {
+  }
+#elif __SAM3X8E__
+  // Arduino Due  
+  RSTC->RSTC_MR = 0xA5000801; // Set RST pin to go low for 256 clock cycles on reset
+  RSTC->RSTC_CR = 0xA5000013; // Reset processor, internal peripherals, and pull external RST pin low.
+#endif
+}
+
+
+
